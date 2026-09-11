@@ -292,6 +292,29 @@ try {
             json_response(['ok'=>true, 'pedido'=>$r]);
             break;
 
+        case 'GET hora-extra/hoje':
+            // Pedidos de hora extra do dia do próprio funcionário. O agente usa
+            // para recuperar um pedido pendente/aprovado ao ser reaberto (antes
+            // o id ficava só em memória e se perdia ao fechar o app).
+            $u = autenticar_token(bearer_token());
+            if (!$u) json_response(['ok'=>false,'erro'=>'Token inválido'],401);
+            $stmt = db()->prepare("SELECT id, status, minutos_solicitados, minutos_aprovados,
+                                          motivo_decisao, solicitado_em, decidido_em
+                                   FROM dot_horas_extras WHERE usuario_id=? AND data_ref=?
+                                   ORDER BY solicitado_em DESC, id DESC LIMIT 20");
+            $stmt->execute([$u['id'], date('Y-m-d')]);
+            $pedidos = array_map(function($p){
+                return [
+                    'id' => (int)$p['id'], 'status' => $p['status'],
+                    'minutos_solicitados' => (int)$p['minutos_solicitados'],
+                    'minutos_aprovados' => (int)($p['minutos_aprovados'] ?? 0),
+                    'motivo_decisao' => $p['motivo_decisao'],
+                    'solicitado_em' => $p['solicitado_em'], 'decidido_em' => $p['decidido_em'],
+                ];
+            }, $stmt->fetchAll());
+            json_response(['ok'=>true, 'agora'=>date('Y-m-d H:i:s'), 'pedidos'=>$pedidos]);
+            break;
+
         case 'GET sessao/atual':
             $u = autenticar_token(bearer_token());
             if (!$u) json_response(['ok'=>false,'erro'=>'Token inválido'],401);

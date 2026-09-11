@@ -1,18 +1,20 @@
 ============================================================
- DOT-ON AGENT - Registro de Ponto Eletronico para Windows
+ DOT-ON AGENT 2.0 - Registro de Ponto Eletronico para Windows
 ============================================================
 
 REQUISITOS:
  - Windows 10/11
- - Python 3.10+ (https://www.python.org/downloads/)
+ - Para rodar a partir do codigo: Python 3.10+ (https://www.python.org/downloads/)
    (marque "Add Python to PATH" durante a instalacao)
+ - Para o executavel (DOT-ON-Agent.exe) nao e preciso instalar nada.
 
-INSTALACAO:
+INSTALACAO (codigo-fonte):
  1. Descompacte este ZIP em uma pasta (ex.: C:\DOT-ON\).
-    Mantenha SEMPRE os arquivos juntos, em especial:
-      - agent.py
+    Mantenha SEMPRE os arquivos juntos:
+      - agent.py          (ponto de entrada)
+      - doton\            (codigo do agente)
       - config.json
-      - dot-on.ini   (quando baixado pelo link da sua empresa)
+      - dot-on.ini        (quando baixado pelo link da sua empresa)
  2. Abra o PowerShell na pasta e instale as dependencias:
       pip install -r requirements.txt
  3. Execute:
@@ -29,17 +31,33 @@ PRIMEIRO ACESSO:
  - Faca login com o e-mail e a senha temporaria que voce recebeu.
  - O sistema vai pedir para criar uma nova senha (minimo 8 caracteres).
 
-INICIAR AUTOMATICAMENTE COM O WINDOWS (opcional):
- - Pressione Win+R, digite "shell:startup" e crie um atalho que execute:
-      pythonw "C:\DOT-ON\agent.py"
+INICIAR AUTOMATICAMENTE COM O WINDOWS:
+ - Clique com o botao direito no icone do DOT-ON na bandeja (ao lado do
+   relogio) e marque "Iniciar com o Windows".
 
 FUNCIONALIDADES:
- - Registro de entrada / saida / intervalo
- - Deteccao automatica de ociosidade (mouse/teclado parados)
- - Lembrete de cumprimento de intervalo (almoco)
- - Bloqueio de tela ao fim do expediente
- - Solicitacao de hora extra com aprovacao do gestor
- - Funciona em segundo plano (icone na bandeja)
+ - Registro de entrada, intervalo, retorno do intervalo e saida
+ - Tempo restante do intervalo, com aviso 1min30s antes do fim
+ - Tempo trabalhado calculado pelas batidas registradas no servidor
+   (fechar e reabrir o agente nao altera o cronometro)
+ - Entrada, saida, almoco e carga previstos para o dia
+ - Solicitacao de hora extra com aprovacao do gestor; ao atingir a carga
+   diaria o agente abre a janela e o pedido automaticamente
+ - Avisos: entrada nao registrada, 6h sem pausa, fim do expediente previsto
+ - Aba "Espelho": banco de horas do mes e ultimos dias
+ - Deteccao de ociosidade (mouse/teclado parados)
+ - Funciona sem internet: as batidas ficam na fila e sao enviadas depois
+ - Atualizacao automatica
+ - Roda em segundo plano (icone na bandeja)
+
+IMPORTANTE:
+ - O expediente NUNCA e encerrado automaticamente e a tela NUNCA e
+   bloqueada. No fim do horario previsto o agente apenas lembra; a saida
+   e sempre registrada pelo funcionario.
+
+DESENVOLVIMENTO:
+ - Testes: python -m pytest tests
+ - Executavel: pyinstaller DOT-ON-Agent.spec  (gera dist\DOT-ON-Agent.exe)
 
 SUPORTE: pierre@syscomai.com.br
 ============================================================
