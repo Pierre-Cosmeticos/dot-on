@@ -1,5 +1,5 @@
 {
-  "versao": "1.1.0",
-  "obrigatoria": false,
-  "notas": "Nova interface: feedback melhorado, tempo de almoco restante, alerta de hora extra e barra de progresso da jornada."
+  "versao": "2.0.0",
+  "obrigatoria": true,
+  "notas": "Agente reescrito. Tempo restante do intervalo com aviso 1min30s antes do fim; tempo trabalhado sempre calculado pelas batidas do servidor; jornada prevista do dia (entrada, saida, almoco, carga); ao atingir a carga diaria o agente abre a janela e o pedido de hora extra; pedido de hora extra recuperado ao reabrir; avisos de entrada atrasada e de pausa apos 6h; aba Espelho com banco de horas do mes; opcao Iniciar com o Windows; indicador online/offline. O expediente nunca e encerrado automaticamente e a tela nunca e bloqueada."
 }

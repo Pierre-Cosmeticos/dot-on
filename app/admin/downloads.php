@@ -6,7 +6,7 @@ $base = '../downloads/';
 ?>
 <div class="panel">
     <h2><?= icon('downloads', 18) ?>DOT-ON Agente Windows</h2>
-    <p>Aplicativo desktop instalado no Windows do funcionário para registrar o ponto, detectar ociosidade e bloquear a tela ao fim do expediente.</p>
+    <p>Aplicativo desktop instalado no Windows do funcionário para registrar o ponto, acompanhar o intervalo e a carga do dia, solicitar hora extra e detectar ociosidade. O encerramento do expediente é sempre feito pelo funcionário: o agente apenas lembra, nunca bloqueia a tela.</p>
 
     <div class="download-box">
         <h3>Agente Python (recomendado)</h3>

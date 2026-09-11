@@ -10,6 +10,9 @@ __pycache__/
 app/agent/.token
 app/agent/agent.log
 app/agent/config.json
+app/agent/sessao_hoje.json
+app/agent/batidas_pendentes.json
+app/agent/tests/__pycache__/
 
 # === Logs ===
 *.log
