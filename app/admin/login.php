@@ -25,8 +25,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: trocar_senha.php');
             exit;
         }
-        // Funcionário vai para portal /me/, demais para admin
-        if ($user['perfil'] === 'funcionario' && $back === 'index.php') {
+        // Funcionário comum sempre vai para o portal /me/ (nunca para o painel,
+        // mesmo que o ?back aponte para uma página do admin). Gestor/RH/admin
+        // seguem o ?back — inclusive ../me/ quando vieram do portal.
+        if (!pode_acessar_painel($user)) {
             header('Location: ../me/');
             exit;
         }

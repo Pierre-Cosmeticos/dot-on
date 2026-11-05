@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         trocar_senha_usuario($user['id'], $nova);
         $_SESSION['dot_user']['precisa_trocar_senha'] = 0;
-        header('Location: index.php?msg=senha_trocada');
+        header('Location: ' . destino_pos_login($user) . '?msg=senha_trocada');
         exit;
     }
 }
