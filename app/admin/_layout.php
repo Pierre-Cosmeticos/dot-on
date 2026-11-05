@@ -4,7 +4,7 @@ require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/tenant.php';
 require_once __DIR__ . '/../includes/icons.php';
 require_once __DIR__ . '/../includes/billing.php';
-$user = requer_login();
+$user = requer_painel(); // painel só para admin/gestor/rh; funcionário vai para /me/
 $empresa = tenant_empresa();
 $pagina = $pagina ?? 'dashboard';
 

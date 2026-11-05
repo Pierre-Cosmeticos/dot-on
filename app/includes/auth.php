@@ -69,6 +69,34 @@ function requer_login($permitir_troca_senha = false) {
     return $u;
 }
 
+/** Perfis com acesso ao painel administrativo (/app/admin). */
+const PERFIS_PAINEL = ['admin', 'gestor', 'rh'];
+
+function pode_acessar_painel($u): bool {
+    return in_array($u['perfil'] ?? '', PERFIS_PAINEL, true);
+}
+
+/**
+ * Destino padrão após login/troca de senha, relativo a /app/admin/.
+ * Funcionário comum sempre vai para o portal /me/.
+ */
+function destino_pos_login($u): string {
+    return pode_acessar_painel($u) ? 'index.php' : '../me/';
+}
+
+/**
+ * Exige login + perfil de painel (admin/gestor/rh). Funcionário comum é
+ * mandado para o portal /me/ em vez de ver o painel.
+ */
+function requer_painel() {
+    $u = requer_login();
+    if (!pode_acessar_painel($u)) {
+        header('Location: ../me/');
+        exit;
+    }
+    return $u;
+}
+
 /**
  * Exige login + um dos perfis informados. Senão, 403.
  * Use no topo de páginas restritas a admin/rh/gestor, e em endpoints de exportação.
