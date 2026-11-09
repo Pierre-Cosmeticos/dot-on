@@ -56,6 +56,26 @@ function requer_login($permitir_troca_senha = false) {
         header("Location: login.php?back=$back");
         exit;
     }
+    // Revalida no banco: usuário excluído ou desativado perde a sessão na hora,
+    // e edições (perfil, nome, e-mail) feitas pelo admin valem sem novo login.
+    try {
+        $st = db()->prepare("SELECT * FROM dot_usuarios WHERE id = ? AND ativo = 1 LIMIT 1");
+        $st->execute([(int)$_SESSION['dot_user']['id']]);
+        $atual = $st->fetch();
+    } catch (Throwable $e) {
+        $atual = $_SESSION['dot_user']; // falha de banco não derruba sessões válidas
+    }
+    if (!$atual) {
+        logout();
+        header("Location: login.php");
+        exit;
+    }
+    if (isset($atual['senha_hash'])) {
+        $troca = (int)($_SESSION['dot_user']['precisa_trocar_senha'] ?? 0);
+        login_sessao($atual);
+        // trocar_senha.php zera a flag só na sessão; preserva esse estado.
+        $_SESSION['dot_user']['precisa_trocar_senha'] = min($troca, (int)($atual['precisa_trocar_senha'] ?? 0));
+    }
     $u = $_SESSION['dot_user'];
 
     // Se precisa trocar senha e não estamos na tela de troca, redireciona
