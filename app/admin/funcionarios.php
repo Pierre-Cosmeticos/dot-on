@@ -91,7 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['perfil'], ['admin',
             $erro = "Você não tem permissão para editar este usuário.";
         } else {
             $nome = trim($_POST['nome'] ?? '');
-            $email = strtolower(trim($_POST['email'] ?? ''));
+            // E-mail é o login (e destino do "reenviar credenciais"): só admin altera,
+            // senão gestor/RH poderiam apontá-lo para si e assumir a conta.
+            $email = $user['perfil'] === 'admin' ? strtolower(trim($_POST['email'] ?? '')) : strtolower($alvo['email']);
             $matricula = trim($_POST['matricula'] ?? '');
             $cpf = preg_replace('/\D/', '', $_POST['cpf'] ?? '');
             $perfis_permitidos = ($user['perfil'] === 'admin') ? ['funcionario','gestor','rh','admin'] : ['funcionario'];
@@ -121,6 +123,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($user['perfil'], ['admin',
                 $mudou = [];
                 foreach (['nome_completo'=>$nome, 'email'=>$email, 'matricula'=>$matricula, 'perfil'=>$perfil] as $k => $v) {
                     if ((string)$alvo[$k] !== (string)$v) $mudou[$k] = ['de'=>$alvo[$k], 'para'=>$v];
+                }
+                if (strtolower($alvo['email']) !== $email) {
+                    // Link de redefinição pendente foi para o endereço antigo: invalida.
+                    db()->prepare("UPDATE dot_usuarios SET token_reset=NULL, token_reset_expira=NULL WHERE id=?")->execute([$uid]);
+                    $assunto = 'DOT-ON: seu e-mail de acesso foi alterado';
+                    $texto = "Olá, {$alvo['nome_completo']}.\n\nO e-mail de acesso da sua conta DOT-ON foi alterado de {$alvo['email']} para {$email} por {$user['nome_completo']}.\nSe você não reconhece essa alteração, procure o RH da sua empresa.";
+                    try { email_enviar($alvo['email'], $alvo['nome_completo'], $assunto, nl2br(htmlspecialchars($texto)), $texto, $emp_id); }
+                    catch (Throwable $e) { error_log("DOT-ON aviso troca de e-mail #$uid: " . $e->getMessage()); }
                 }
                 if ((string)$alvo['cpf'] !== $cpf) $mudou['cpf'] = 'alterado';
                 if ($escala_ok && (int)$alvo['escala_id'] !== $escala_id) $mudou['escala_id'] = ['de'=>$alvo['escala_id'], 'para'=>$escala_id];
@@ -277,7 +287,8 @@ $perfis_rotulo = ['funcionario'=>'Funcionário', 'gestor'=>'Gestor', 'rh'=>'RH',
             <input name="nome" value="<?= htmlspecialchars($editar['nome_completo']) ?>" required>
         </label>
         <label style="flex:2">E-mail (login)
-            <input name="email" type="email" value="<?= htmlspecialchars($editar['email']) ?>" required>
+            <input name="email" type="email" value="<?= htmlspecialchars($editar['email']) ?>" required
+                <?= $user['perfil'] !== 'admin' ? 'readonly title="Somente o administrador altera o e-mail de login"' : '' ?>>
         </label>
         <label>CPF
             <input name="cpf" value="<?= htmlspecialchars($editar['cpf'] ?? '') ?>" maxlength="14">
