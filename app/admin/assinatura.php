@@ -32,7 +32,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg_tipo = 'success';
             } catch (Throwable $e) {
                 error_log('DOT-ON assinar empresa ' . $empresa_id . ': ' . $e->getMessage());
-                $msg = 'Não foi possível criar a assinatura: ' . $e->getMessage();
+                // Só mensagens do gateway/validações vão para a tela; o resto fica no log.
+                $msg = $e instanceof AsaasException
+                    ? 'Não foi possível criar a assinatura: ' . $e->getMessage()
+                    : 'Não foi possível criar a assinatura agora. Tente novamente em alguns minutos ou fale com o suporte.';
                 $msg_tipo = 'error';
             }
         }
@@ -60,7 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg_tipo = 'success';
         } catch (Throwable $e) {
             error_log('DOT-ON cancelar empresa ' . $empresa_id . ': ' . $e->getMessage());
-            $msg = 'Não foi possível cancelar agora (' . $e->getMessage() . '). Nada foi alterado — tente novamente.';
+            $msg = 'Não foi possível cancelar agora'
+                 . ($e instanceof AsaasException ? ' (' . $e->getMessage() . ')' : '')
+                 . '. Nada foi alterado — tente novamente.';
             $msg_tipo = 'error';
         }
     }
