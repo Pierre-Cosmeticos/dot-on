@@ -200,6 +200,11 @@ try {
             exit;
         }
 
+        // Lido ANTES da transação: na 1ª chamada após um deploy, billing_config()
+        // pode rodar DDL (CREATE/ALTER), que faz COMMIT implícito no MySQL.
+        $dias_trial = (int)(billing_config()['dias_trial'] ?? 30);
+        if ($dias_trial <= 0) $dias_trial = 30;
+
         $pdo->beginTransaction();
         try {
             // 1. Cria empresa
@@ -214,10 +219,7 @@ try {
                 $uf = strtoupper(trim($parts[1] ?? ''));
             }
 
-            // Duração do trial vem da config de faturamento (padrão 30 dias).
-            $dias_trial = (int)(billing_config()['dias_trial'] ?? 30);
-            if ($dias_trial <= 0) $dias_trial = 30;
-
+            // Duração do trial ($dias_trial) vem da config de faturamento, lida acima.
             $st = $pdo->prepare("INSERT INTO dot_empresas (razao_social, nome_fantasia, cnpj, slug, telefone, email_contato, setor, cep, cidade, uf, endereco, plano, ativo, trial_expira, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())");
             $st->execute([
                 $e['razao_social'],

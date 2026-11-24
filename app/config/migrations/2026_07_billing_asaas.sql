@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS dot_billing_config (
     ciclo           VARCHAR(20) NOT NULL DEFAULT 'MONTHLY',
     dias_trial      INT NOT NULL DEFAULT 30,
     ativo           TINYINT(1) NOT NULL DEFAULT 1,
+    legado_migrado_em DATETIME NULL,                 -- quando as empresas antigas ganharam o trial de ativação
     atualizado_em   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -26,13 +27,16 @@ CREATE TABLE IF NOT EXISTS dot_billing_config (
 CREATE TABLE IF NOT EXISTS dot_assinaturas (
     id                     INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
     empresa_id             INT UNSIGNED NOT NULL,
+    ambiente               VARCHAR(12) NULL,     -- sandbox|production (IDs de um não valem no outro)
     asaas_customer_id      VARCHAR(64) NULL,
     asaas_subscription_id  VARCHAR(64) NULL,
-    status                 VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending|active|overdue|canceled
+    status                 VARCHAR(20) NOT NULL DEFAULT 'pending', -- pending|active|overdue|canceled (calculado)
     valor                  DECIMAL(10,2) NOT NULL DEFAULT 0,
     ciclo                  VARCHAR(20) NOT NULL DEFAULT 'MONTHLY',
     forma_pagamento        VARCHAR(20) NOT NULL DEFAULT 'UNDEFINED', -- BOLETO|PIX|CREDIT_CARD|UNDEFINED
-    proximo_vencimento     DATE NULL,
+    proximo_vencimento     DATE NULL,            -- cobrança em aberto mais antiga (base da carência)
+    pago_ate               DATE NULL,            -- fim do período pago (vale mesmo após cancelar)
+    carencia_desde         DATE NULL,            -- 1º vencimento não pago (não reinicia ao reassinar)
     criado_em              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_empresa (empresa_id),
@@ -46,8 +50,10 @@ CREATE TABLE IF NOT EXISTS dot_pagamentos (
     empresa_id         INT UNSIGNED NOT NULL,
     assinatura_id      INT UNSIGNED NULL,
     asaas_payment_id   VARCHAR(64) NOT NULL,
+    asaas_subscription_id VARCHAR(64) NULL,
+    ambiente           VARCHAR(12) NULL,
     valor              DECIMAL(10,2) NOT NULL DEFAULT 0,
-    status             VARCHAR(30) NOT NULL DEFAULT 'PENDING', -- PENDING|CONFIRMED|RECEIVED|OVERDUE|REFUNDED|DELETED
+    status             VARCHAR(30) NOT NULL DEFAULT 'PENDING', -- PENDING|CONFIRMED|RECEIVED|OVERDUE|REFUNDED|CHARGEBACK_REQUESTED|DELETED
     forma              VARCHAR(20) NULL,
     vencimento         DATE NULL,
     pago_em            DATETIME NULL,
@@ -61,7 +67,8 @@ CREATE TABLE IF NOT EXISTS dot_pagamentos (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 4) Coluna de status de assinatura na empresa (denormalizada p/ gating rápido).
---    'trial' | 'active' | 'overdue' | 'canceled'
+--    (Se a coluna já existir, este ALTER falha com "Duplicate column" — pode ignorar.)
+--    'trial' | 'pending' | 'active' | 'overdue' | 'canceled'
 ALTER TABLE dot_empresas
     ADD COLUMN assinatura_status VARCHAR(20) NOT NULL DEFAULT 'trial';
 

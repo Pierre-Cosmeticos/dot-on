@@ -12,6 +12,7 @@ if (!in_array($user['perfil'] ?? '', ['admin','rh'], true)) {
 $empresa_id = (int)$user['empresa_id'];
 $cfg = billing_config();
 $msg = ''; $msg_tipo = '';
+$fmt = fn($d) => $d ? date('d/m/Y', strtotime($d)) : '—';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
@@ -23,10 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg_tipo = 'error';
         } else {
             try {
-                $forma = in_array($_POST['forma'] ?? '', ['UNDEFINED','PIX','BOLETO','CREDIT_CARD']) ? $_POST['forma'] : 'UNDEFINED';
-                billing_assinar_empresa($empresa_id, $forma);
+                $forma = in_array($_POST['forma'] ?? '', ['UNDEFINED','PIX','BOLETO','CREDIT_CARD'], true) ? $_POST['forma'] : 'UNDEFINED';
+                $a = billing_assinar_empresa($empresa_id, $forma);
                 auditar($user['id'], 'assinatura_criada', 'faturamento', $empresa_id, ['forma' => $forma]);
-                $msg = 'Assinatura criada! Use o link de pagamento abaixo para concluir.';
+                $msg = 'Assinatura criada! Primeira cobrança em ' . $fmt($a['proximo_vencimento'] ?? null)
+                     . '. Use o link de pagamento abaixo para pagar.';
                 $msg_tipo = 'success';
             } catch (Throwable $e) {
                 error_log('DOT-ON assinar empresa ' . $empresa_id . ': ' . $e->getMessage());
@@ -36,30 +38,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($acao === 'atualizar') {
+        try {
+            billing_sincronizar_assinatura($empresa_id);
+            $msg = 'Status atualizado com o Asaas.'; $msg_tipo = 'success';
+        } catch (Throwable $e) {
+            error_log('DOT-ON sync empresa ' . $empresa_id . ': ' . $e->getMessage());
+            $msg = 'Não foi possível consultar o Asaas agora. Tente novamente em alguns minutos.';
+            $msg_tipo = 'error';
+        }
+    }
+
     if ($acao === 'cancelar') {
-        billing_cancelar_assinatura($empresa_id);
-        auditar($user['id'], 'assinatura_cancelada', 'faturamento', $empresa_id);
-        $msg = 'Assinatura cancelada. Você mantém o acesso até o fim do período já pago.';
-        $msg_tipo = 'success';
+        try {
+            billing_cancelar_assinatura($empresa_id);
+            auditar($user['id'], 'assinatura_cancelada', 'faturamento', $empresa_id);
+            $a = billing_assinatura($empresa_id);
+            $msg = (!empty($a['pago_ate']) && $a['pago_ate'] >= billing_hoje())
+                ? 'Assinatura cancelada. Você mantém o acesso até ' . $fmt($a['pago_ate']) . ' (fim do período pago).'
+                : 'Assinatura cancelada. Nenhuma nova cobrança será gerada.';
+            $msg_tipo = 'success';
+        } catch (Throwable $e) {
+            error_log('DOT-ON cancelar empresa ' . $empresa_id . ': ' . $e->getMessage());
+            $msg = 'Não foi possível cancelar agora (' . $e->getMessage() . '). Nada foi alterado — tente novamente.';
+            $msg_tipo = 'error';
+        }
     }
 }
 
+$emp        = billing_empresa($empresa_id);          // sem cache: reflete o POST acima
 $assinatura = billing_assinatura($empresa_id);
 $pagamentos = billing_pagamentos($empresa_id);
-$emp = tenant_empresa();
-$status = $emp['assinatura_status'] ?? 'trial';
-$valor = billing_valor_plano();
+$status     = $emp['assinatura_status'] ?? 'trial';
+$situacao   = billing_situacao($emp);
+$valor      = billing_valor_plano();
+$hoje       = billing_hoje();
 $brl = fn($v) => 'R$ ' . number_format((float)$v, 2, ',', '.');
 
-// Cobrança em aberto mais recente (para exibir link de pagamento)
+// Assinatura viva = existe no Asaas neste ambiente e não foi cancelada.
+$viva = $assinatura && $assinatura['asaas_subscription_id'] && $assinatura['status'] !== 'canceled'
+        && billing_assinatura_do_ambiente($assinatura);
+
+// Cobrança em aberto mais antiga DA ASSINATURA ATUAL (é a que precisa ser paga).
+// Cobranças de assinaturas antigas nunca são oferecidas para pagamento.
+$sub_atual = $viva ? $assinatura['asaas_subscription_id'] : null;
+$pagavel = fn($p) => $sub_atual && in_array($p['status'], BILLING_EM_ABERTO, true)
+                     && ($p['asaas_subscription_id'] ?? null) === $sub_atual;
 $em_aberto = null;
-foreach ($pagamentos as $p) {
-    if (in_array($p['status'], ['PENDING','OVERDUE','AWAITING_RISK_ANALYSIS'])) { $em_aberto = $p; break; }
+foreach (array_reverse($pagamentos) as $p) {
+    if ($pagavel($p)) { $em_aberto = $p; break; }
 }
 
 $dias_trial = null;
 if ($status === 'trial' && !empty($emp['trial_expira'])) {
-    $dias_trial = max(0, ceil((strtotime($emp['trial_expira']) - time()) / 86400));
+    $dias_trial = max(0, billing_dias_entre($hoje, substr($emp['trial_expira'], 0, 10)));
 }
 
 $labels = [
@@ -70,6 +102,7 @@ $labels = [
     'canceled' => ['Cancelada', '#64748b'],
 ];
 [$statusLabel, $statusCor] = $labels[$status] ?? ['—', '#64748b'];
+$pago_ate = ($assinatura && billing_assinatura_do_ambiente($assinatura)) ? ($assinatura['pago_ate'] ?? null) : null;
 ?>
 <?php if ($msg): ?><div class="alert <?= $msg_tipo==='success'?'success':'error' ?>" style="padding:12px 16px;border-radius:8px;margin-bottom:16px;background:<?= $msg_tipo==='success'?'#dcfce7':'#fee2e2' ?>;color:<?= $msg_tipo==='success'?'#166534':'#991b1b' ?>;"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
 
@@ -82,21 +115,37 @@ $labels = [
             <?php if ($dias_trial !== null): ?>
                 <div style="font-size:13px;color:#6b7280;margin-top:4px;"><?= $dias_trial ?> dia(s) restante(s) de teste grátis</div>
             <?php endif; ?>
+            <?php if (in_array($status, ['pending','overdue'], true) && $situacao['dias_ate_bloqueio'] !== null && $situacao['liberado']
+                      && $viva && !empty($assinatura['proximo_vencimento']) && $assinatura['proximo_vencimento'] <= $hoje): ?>
+                <div style="font-size:13px;color:#6b7280;margin-top:4px;">Acesso garantido por mais <?= (int)$situacao['dias_ate_bloqueio'] ?> dia(s) enquanto o pagamento não compensa</div>
+            <?php endif; ?>
         </div>
-        <?php if ($assinatura && $assinatura['proximo_vencimento']): ?>
+        <?php if ($viva && $assinatura['proximo_vencimento']): ?>
         <div>
-            <div style="font-size:13px;color:#6b7280;">Próximo vencimento</div>
-            <div style="font-size:20px;font-weight:700;"><?= date('d/m/Y', strtotime($assinatura['proximo_vencimento'])) ?></div>
+            <div style="font-size:13px;color:#6b7280;"><?= $status === 'overdue' ? 'Venceu em' : 'Próximo vencimento' ?></div>
+            <div style="font-size:20px;font-weight:700;"><?= $fmt($assinatura['proximo_vencimento']) ?></div>
+        </div>
+        <?php endif; ?>
+        <?php if ($pago_ate && $pago_ate >= $hoje && !($viva && $pago_ate === ($assinatura['proximo_vencimento'] ?? null))): ?>
+        <div>
+            <div style="font-size:13px;color:#6b7280;">Pago até</div>
+            <div style="font-size:20px;font-weight:700;"><?= $fmt($pago_ate) ?></div>
         </div>
         <?php endif; ?>
     </div>
 </div>
 
-<?php if ($em_aberto): ?>
-<div class="panel" style="border-left:4px solid #f59e0b;">
+<?php
+// Em dia: a próxima fatura (gerada pelo Asaas com antecedência) só ganha destaque
+// perto do vencimento; antes disso fica no histórico.
+$destacar_fatura = $em_aberto && $viva
+    && ($status !== 'active' || ($em_aberto['vencimento'] && $em_aberto['vencimento'] <= billing_data_mais_dias($hoje, 7)));
+?>
+<?php if ($destacar_fatura): ?>
+<div class="panel" style="border-left:4px solid <?= $em_aberto['status']==='OVERDUE' ? '#ef4444' : '#f59e0b' ?>;">
     <h2><?= icon('config', 18) ?>Fatura em aberto — <?= $brl($em_aberto['valor']) ?></h2>
-    <p>Vencimento: <strong><?= $em_aberto['vencimento'] ? date('d/m/Y', strtotime($em_aberto['vencimento'])) : '—' ?></strong></p>
-    <p style="margin-top:12px;">
+    <p>Vencimento: <strong><?= $fmt($em_aberto['vencimento']) ?></strong></p>
+    <p style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;">
         <?php if ($em_aberto['url_fatura']): ?>
             <a href="<?= htmlspecialchars($em_aberto['url_fatura']) ?>" target="_blank" rel="noopener" class="btn btn-primary">💳 Pagar agora (Pix / Boleto / Cartão)</a>
         <?php endif; ?>
@@ -104,6 +153,21 @@ $labels = [
             <a href="<?= htmlspecialchars($em_aberto['url_boleto']) ?>" target="_blank" rel="noopener" class="btn btn-outline">📄 Boleto</a>
         <?php endif; ?>
     </p>
+    <form method="post" style="margin-top:10px;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="acao" value="atualizar">
+        <button class="btn btn-outline" type="submit">🔄 Já paguei — atualizar status</button>
+        <span class="muted" style="font-size:12px;color:#6b7280;margin-left:6px;">Pix e cartão confirmam na hora; boleto leva até 3 dias úteis.</span>
+    </form>
+</div>
+<?php elseif ($viva && !$em_aberto && $status !== 'active'): /* cobrança ainda não sincronizada */ ?>
+<div class="panel">
+    <p>Sua assinatura foi criada e a cobrança está sendo gerada pelo Asaas.</p>
+    <form method="post" style="margin-top:10px;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="acao" value="atualizar">
+        <button class="btn btn-outline" type="submit">🔄 Atualizar</button>
+    </form>
 </div>
 <?php endif; ?>
 
@@ -123,14 +187,19 @@ $labels = [
         <li>✓ Painel do gestor completo + auditoria fiscal</li>
     </ul>
 
-    <?php if ($status === 'active'): ?>
-        <div class="alert" style="background:#dcfce7;color:#166534;padding:12px 16px;border-radius:8px;">Sua assinatura está ativa. Obrigado! 💚</div>
-        <form method="post" onsubmit="return confirm('Cancelar a assinatura? Você mantém o acesso até o fim do período pago.');" style="margin-top:12px;">
+    <?php if ($viva): ?>
+        <?php if ($status === 'active'): ?>
+            <div class="alert" style="background:#dcfce7;color:#166534;padding:12px 16px;border-radius:8px;">Sua assinatura está ativa. Obrigado! 💚</div>
+        <?php endif; ?>
+        <form method="post" onsubmit="return confirm('Cancelar a assinatura? Nenhuma nova cobrança será gerada e você mantém o acesso até o fim do período já pago.');" style="margin-top:12px;">
             <?= csrf_field() ?>
             <input type="hidden" name="acao" value="cancelar">
             <button class="btn btn-outline" type="submit">Cancelar assinatura</button>
         </form>
     <?php else: ?>
+        <?php
+            $primeiro = billing_primeiro_vencimento($emp, billing_assinatura_do_ambiente($assinatura) ? $assinatura : null);
+        ?>
         <form method="post" style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
             <?= csrf_field() ?>
             <input type="hidden" name="acao" value="assinar">
@@ -142,8 +211,15 @@ $labels = [
                     <option value="CREDIT_CARD">Cartão de crédito</option>
                 </select>
             </label>
-            <button class="btn btn-primary" type="submit">🚀 Assinar agora — <?= $brl($valor) ?>/mês</button>
+            <button class="btn btn-primary" type="submit"><?= $status === 'canceled' ? '🔁 Assinar novamente' : '🚀 Assinar agora' ?> — <?= $brl($valor) ?>/mês</button>
         </form>
+        <p class="muted" style="margin-top:8px;color:#6b7280;font-size:13px;">
+            <?php if ($primeiro > $hoje): ?>
+                A primeira cobrança vence em <strong><?= $fmt($primeiro) ?></strong><?= $status === 'trial' ? ' (fim do seu teste grátis — você não perde nenhum dia)' : ' (fim do período já pago)' ?>.
+            <?php else: ?>
+                A primeira cobrança vence hoje.
+            <?php endif; ?>
+        </p>
         <?php if (!billing_configurado()): ?>
             <p class="muted" style="margin-top:8px;color:#6b7280;font-size:13px;">O pagamento online está sendo ativado. Se precisar, fale com o suporte.</p>
         <?php endif; ?>
@@ -155,15 +231,19 @@ $labels = [
     <table class="tbl">
         <thead><tr><th>Vencimento</th><th>Valor</th><th>Forma</th><th>Status</th><th>Pago em</th><th></th></tr></thead>
         <tbody>
-        <?php foreach ($pagamentos as $p):
-            $pago = in_array($p['status'], ['CONFIRMED','RECEIVED','RECEIVED_IN_CASH']); ?>
+        <?php
+        $formas  = ['UNDEFINED'=>'A escolher','PIX'=>'Pix','BOLETO'=>'Boleto','CREDIT_CARD'=>'Cartão'];
+        $rotulos = ['PENDING'=>'Em aberto','OVERDUE'=>'Vencida','CONFIRMED'=>'Paga','RECEIVED'=>'Paga','RECEIVED_IN_CASH'=>'Paga',
+                    'REFUNDED'=>'Estornada','CHARGEBACK_REQUESTED'=>'Contestada','AWAITING_RISK_ANALYSIS'=>'Em análise'];
+        foreach ($pagamentos as $p):
+            $pago = in_array($p['status'], BILLING_PAGOS, true); ?>
             <tr>
-                <td><?= $p['vencimento'] ? date('d/m/Y', strtotime($p['vencimento'])) : '—' ?></td>
+                <td><?= $fmt($p['vencimento']) ?></td>
                 <td><?= $brl($p['valor']) ?></td>
-                <td><?= htmlspecialchars($p['forma'] ?: '—') ?></td>
-                <td style="color:<?= $pago ? '#10b981' : ($p['status']==='OVERDUE' ? '#ef4444' : '#6b7280') ?>;font-weight:600;"><?= htmlspecialchars($p['status']) ?></td>
-                <td><?= $p['pago_em'] ? date('d/m/Y', strtotime($p['pago_em'])) : '—' ?></td>
-                <td><?php if ($p['url_fatura'] && !$pago): ?><a href="<?= htmlspecialchars($p['url_fatura']) ?>" target="_blank" rel="noopener">pagar</a><?php endif; ?></td>
+                <td><?= htmlspecialchars($formas[$p['forma']] ?? ($p['forma'] ?: '—')) ?></td>
+                <td style="color:<?= $pago ? '#10b981' : ($p['status']==='OVERDUE' ? '#ef4444' : '#6b7280') ?>;font-weight:600;"><?= htmlspecialchars($rotulos[$p['status']] ?? $p['status']) ?></td>
+                <td><?= $fmt($p['pago_em']) ?></td>
+                <td><?php if ($p['url_fatura'] && $pagavel($p)): ?><a href="<?= htmlspecialchars($p['url_fatura']) ?>" target="_blank" rel="noopener">pagar</a><?php endif; ?></td>
             </tr>
         <?php endforeach; ?>
         <?php if (!$pagamentos): ?>

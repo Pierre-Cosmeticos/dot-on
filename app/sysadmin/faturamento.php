@@ -50,6 +50,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    if ($acao === 'sincronizar') {
+        $r = billing_reconciliar();
+        if (!empty($r['ok'])) {
+            $msg = "Sincronização concluída: {$r['processadas']} assinatura(s) atualizada(s)" . ($r['erros'] ? ", {$r['erros']} com erro (ver log)" : '') . '.';
+            $msg_tipo = $r['erros'] ? 'error' : 'success';
+        } else {
+            $msg = 'Não foi possível sincronizar: ' . ($r['erro'] ?? 'erro desconhecido'); $msg_tipo = 'error';
+        }
+        sysadmin_log('billing_sync', null, $r);
+    }
+
     if ($acao === 'testar') {
         $cli = AsaasClient::fromConfig();
         if (!$cli) { $msg = 'Configure a chave da API antes de testar.'; $msg_tipo = 'error'; }
@@ -88,6 +99,13 @@ $webhook_url = rtrim((require __DIR__ . '/../config/app.php')['base_url'], '/') 
 <h1>💰 Faturamento (Asaas)</h1>
 
 <?php if ($msg): ?><div class="alert <?= $msg_tipo ?>"><?= htmlspecialchars($msg) ?></div><?php endif; ?>
+
+<?php if ($configurado && empty($cfg['webhook_token'])): ?>
+<div class="alert error">
+    🔔 O <strong>token do webhook</strong> não está definido — o webhook recusa todos os avisos do Asaas
+    até ele ser configurado. Gere um token abaixo e cadastre o mesmo valor no Asaas.
+</div>
+<?php endif; ?>
 
 <?php if (!$configurado): ?>
 <div class="alert info">
@@ -160,6 +178,11 @@ $webhook_url = rtrim((require __DIR__ . '/../config/app.php')['base_url'], '/') 
         <input type="hidden" name="acao" value="testar">
         <button class="btn btn-outline" type="submit">🔌 Testar conexão</button>
     </form>
+    <form method="post" style="display:inline-block;margin-top:10px;margin-left:6px;">
+        <?= csrf_field() ?>
+        <input type="hidden" name="acao" value="sincronizar">
+        <button class="btn btn-outline" type="submit" title="Consulta o Asaas e corrige o status de todas as assinaturas (o mesmo que o cron diário faz)">🔄 Sincronizar agora</button>
+    </form>
 </div>
 
 <div class="panel">
@@ -203,7 +226,7 @@ $webhook_url = rtrim((require __DIR__ . '/../config/app.php')['base_url'], '/') 
 <div class="panel">
     <h2 style="margin-top:0;">📄 Assinaturas</h2>
     <table>
-        <thead><tr><th>Empresa</th><th>Status</th><th>Valor</th><th>Próx. vencimento</th><th>Subscription ID</th></tr></thead>
+        <thead><tr><th>Empresa</th><th>Status</th><th>Valor</th><th>Próx. vencimento</th><th>Pago até</th><th>Ambiente</th><th>Subscription ID</th></tr></thead>
         <tbody>
         <?php foreach ($assinaturas as $a):
             $badge = ['active'=>'active','overdue'=>'trial','pending'=>'basic','canceled'=>'inactive'][$a['status']] ?? 'free'; ?>
@@ -212,11 +235,13 @@ $webhook_url = rtrim((require __DIR__ . '/../config/app.php')['base_url'], '/') 
                 <td><span class="badge-pill <?= $badge ?>"><?= htmlspecialchars($a['status']) ?></span></td>
                 <td><?= $brl($a['valor']) ?></td>
                 <td class="muted"><?= $a['proximo_vencimento'] ? date('d/m/Y', strtotime($a['proximo_vencimento'])) : '—' ?></td>
+                <td class="muted"><?= !empty($a['pago_ate']) ? date('d/m/Y', strtotime($a['pago_ate'])) : '—' ?></td>
+                <td class="muted"><?= htmlspecialchars($a['ambiente'] ?? '—') ?><?= ($a['ambiente'] ?? null) !== ($cfg['ambiente'] ?? 'sandbox') ? ' <span title="De outro ambiente: ignorada">⚠️</span>' : '' ?></td>
                 <td class="muted"><code><?= htmlspecialchars($a['asaas_subscription_id'] ?: '—') ?></code></td>
             </tr>
         <?php endforeach; ?>
         <?php if (!$assinaturas): ?>
-            <tr><td colspan="5" style="text-align:center;padding:30px;color:#64748b;">Nenhuma assinatura ainda.</td></tr>
+            <tr><td colspan="7" style="text-align:center;padding:30px;color:#64748b;">Nenhuma assinatura ainda.</td></tr>
         <?php endif; ?>
         </tbody>
     </table>

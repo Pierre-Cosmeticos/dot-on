@@ -29,6 +29,9 @@ class AsaasClient {
         $this->baseUrl = $ambiente === 'production'
             ? 'https://api.asaas.com/v3'
             : 'https://sandbox.asaas.com/api/v3';
+        // Só para desenvolvimento local (simulador do Asaas). Nunca definida em produção.
+        $override = getenv('DOTON_ASAAS_BASE_URL');
+        if ($override) $this->baseUrl = rtrim($override, '/');
     }
 
     /** Retorna o cliente já configurado a partir do dot_billing_config, ou null. */
@@ -53,6 +56,11 @@ class AsaasClient {
         return $this->request('GET', "/customers/{$customerId}");
     }
 
+    /** Clientes (não removidos) com a referência externa dada. */
+    public function listarClientesPorReferencia(string $ref): array {
+        return $this->request('GET', '/customers?limit=10&externalReference=' . rawurlencode($ref))['data'] ?? [];
+    }
+
     /**
      * Valida a credencial sem criar nada (GET leve). Lança AsaasException se a
      * chave for inválida/ambiente errado; retorna true se responder 2xx.
@@ -72,13 +80,31 @@ class AsaasClient {
         return $this->request('POST', '/subscriptions', $dados);
     }
 
+    /** Assinaturas ATIVAS com a referência externa dada (para adotar em vez de duplicar). */
+    public function listarAssinaturasPorReferencia(string $ref): array {
+        return $this->request('GET', '/subscriptions?limit=10&status=ACTIVE&externalReference=' . rawurlencode($ref))['data'] ?? [];
+    }
+
     public function buscarAssinatura(string $subId): array {
         return $this->request('GET', "/subscriptions/{$subId}");
     }
 
-    /** Cobranças geradas por uma assinatura. */
-    public function pagamentosDaAssinatura(string $subId): array {
-        return $this->request('GET', "/subscriptions/{$subId}/payments");
+    /** Uma página das cobranças geradas por uma assinatura. */
+    public function pagamentosDaAssinatura(string $subId, int $offset = 0, int $limit = 100): array {
+        return $this->request('GET', "/subscriptions/{$subId}/payments?offset={$offset}&limit={$limit}");
+    }
+
+    /** Todas as cobranças da assinatura (percorre a paginação do Asaas). */
+    public function todosPagamentosDaAssinatura(string $subId): array {
+        $todos = []; $offset = 0;
+        for ($i = 0; $i < 50; $i++) { // teto de segurança: 5.000 cobranças
+            $resp  = $this->pagamentosDaAssinatura($subId, $offset, 100);
+            $dados = $resp['data'] ?? [];
+            array_push($todos, ...$dados);
+            if (empty($resp['hasMore']) || !$dados) break;
+            $offset += count($dados);
+        }
+        return $todos;
     }
 
     public function cancelarAssinatura(string $subId): array {
@@ -89,6 +115,11 @@ class AsaasClient {
 
     public function buscarPagamento(string $paymentId): array {
         return $this->request('GET', "/payments/{$paymentId}");
+    }
+
+    /** Remove uma cobrança ainda não paga. */
+    public function excluirPagamento(string $paymentId): array {
+        return $this->request('DELETE', "/payments/{$paymentId}");
     }
 
     // -------- HTTP --------

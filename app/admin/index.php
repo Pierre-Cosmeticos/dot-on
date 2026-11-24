@@ -35,12 +35,12 @@ $ultimas = $st->fetchAll();
 </div>
 <?php endif; ?>
 
-<?php if ($empresa && $empresa['plano']==='free' && !empty($empresa['trial_expira'])):
-    $dias = max(0, round((strtotime($empresa['trial_expira']) - time()) / 86400));
+<?php if ($empresa && ($empresa['assinatura_status'] ?? 'trial')==='trial' && !empty($empresa['trial_expira'])):
+    $dias = max(0, billing_dias_entre(billing_hoje(), substr($empresa['trial_expira'], 0, 10)));
 ?>
 <div style="background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:12px 16px;border-radius:12px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-<div style="display:flex;align-items:center;gap:9px"><?= icon('clock', 18) ?><span><strong>Plano Grátis</strong> · <?= $dias ?> dias de trial restantes</span></div>
-<a href="#" class="btn btn-primary" style="padding:7px 14px;font-size:.82rem">Fazer upgrade</a>
+<div style="display:flex;align-items:center;gap:9px"><?= icon('clock', 18) ?><span><strong>Teste grátis</strong> · <?= $dias ?> dia(s) restante(s)</span></div>
+<a href="assinatura.php" class="btn btn-primary" style="padding:7px 14px;font-size:.82rem">Assinar</a>
 </div>
 <?php endif; ?>
 
