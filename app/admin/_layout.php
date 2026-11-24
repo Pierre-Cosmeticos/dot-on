@@ -22,6 +22,7 @@ $nav_itens = [
     ['banco_horas',    'banco_horas.php',   'banco_horas',    'Banco de Horas'],
     ['espelho',        'espelho.php',       'espelho',        'Espelho de Ponto'],
     ['relatorios',     'relatorios.php',    'relatorios',     'Relatórios & AFD/AEJ'],
+    ['folha_envio',    'folha_envio.php',   'mail',           'Envio da Folha'],
     ['config',         'config.php',        'config',         'Configurações'],
     ['assinatura',     'assinatura.php',    'config',         'Assinatura'],
     ['downloads',      'downloads.php',     'downloads',      'Agente Windows'],
