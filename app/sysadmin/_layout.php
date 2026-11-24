@@ -107,6 +107,7 @@ input:focus, select:focus { outline:none; border-color:#dc2626; }
         <a href="usuarios.php" class="<?= $pagina==='usuarios'?'active':'' ?>"><span class="icon">👥</span>Usuários</a>
         <a href="metricas.php" class="<?= $pagina==='metricas'?'active':'' ?>"><span class="icon">📈</span>Métricas</a>
         <a href="planos.php" class="<?= $pagina==='planos'?'active':'' ?>"><span class="icon">💳</span>Planos</a>
+        <a href="faturamento.php" class="<?= $pagina==='faturamento'?'active':'' ?>"><span class="icon">💰</span>Faturamento</a>
         <a href="instaladores.php" class="<?= $pagina==='instaladores'?'active':'' ?>"><span class="icon">📦</span>Instaladores</a>
         <a href="auditoria.php" class="<?= $pagina==='auditoria'?'active':'' ?>"><span class="icon">🔍</span>Auditoria</a>
         <a href="smtp.php" class="<?= $pagina==='smtp'?'active':'' ?>"><span class="icon">📧</span>SMTP</a>

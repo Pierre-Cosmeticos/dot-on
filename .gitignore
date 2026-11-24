@@ -32,3 +32,6 @@ desktop.ini
 # (binário distribuído aos funcionários).
 # Cache do checksum do agent (derivado do .exe, recriado em runtime no servidor):
 app/downloads/*.sha256.json
+
+# Screenshots/logs do Playwright (testes locais)
+.playwright-mcp/

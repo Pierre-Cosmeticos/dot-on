@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/mailer.php';
 require_once __DIR__ . '/../includes/helpers.php';
+require_once __DIR__ . '/../includes/billing.php';
 
 function signup_api_route(): string {
     if (!empty($_GET['rota'])) {
@@ -167,6 +168,20 @@ try {
         $cnpj = preg_replace('/\D/','', $e['cnpj']);
         if (strlen($cnpj) !== 14) { echo json_encode(['ok'=>false,'erro'=>'CNPJ inválido']); exit; }
 
+        // Garantia de CNPJ válido: dígitos verificadores (local, sempre) + existência
+        // na Receita (best-effort — só bloqueia se a API AFIRMAR inexistente/baixado;
+        // se estiver indisponível, não trava o cadastro).
+        if (!cnpj_valido($cnpj)) {
+            echo json_encode(['ok'=>false,'erro'=>'CNPJ inválido — verifique os dígitos.']); exit;
+        }
+        $situacao_cnpj = cnpj_consulta_receita($cnpj);
+        if ($situacao_cnpj === 'inexistente') {
+            echo json_encode(['ok'=>false,'erro'=>'CNPJ não encontrado na Receita Federal.']); exit;
+        }
+        if ($situacao_cnpj === 'baixado') {
+            echo json_encode(['ok'=>false,'erro'=>'Este CNPJ consta como baixado/inativo na Receita Federal.']); exit;
+        }
+
         $pdo = db();
 
         // CNPJ já existe?
@@ -185,6 +200,11 @@ try {
             exit;
         }
 
+        // Lido ANTES da transação: na 1ª chamada após um deploy, billing_config()
+        // pode rodar DDL (CREATE/ALTER), que faz COMMIT implícito no MySQL.
+        $dias_trial = (int)(billing_config()['dias_trial'] ?? 30);
+        if ($dias_trial <= 0) $dias_trial = 30;
+
         $pdo->beginTransaction();
         try {
             // 1. Cria empresa
@@ -199,6 +219,7 @@ try {
                 $uf = strtoupper(trim($parts[1] ?? ''));
             }
 
+            // Duração do trial ($dias_trial) vem da config de faturamento, lida acima.
             $st = $pdo->prepare("INSERT INTO dot_empresas (razao_social, nome_fantasia, cnpj, slug, telefone, email_contato, setor, cep, cidade, uf, endereco, plano, ativo, trial_expira, criado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())");
             $st->execute([
                 $e['razao_social'],

@@ -94,3 +94,60 @@ function get_config(int $empresa_id, string $chave, $default = null) {
     }
     return $cache[$empresa_id][$chave] ?? $default;
 }
+
+/**
+ * Valida os dígitos verificadores de um CNPJ (garantia local, sem rede).
+ * Rejeita formato errado e sequências repetidas (00000000000000 etc.).
+ */
+function cnpj_valido(string $cnpj): bool {
+    $cnpj = preg_replace('/\D/', '', $cnpj);
+    if (strlen($cnpj) !== 14) return false;
+    if (preg_match('/^(\d)\1{13}$/', $cnpj)) return false; // todos os dígitos iguais
+    $dv = function (string $base): int {
+        $pesos = strlen($base) === 12
+            ? [5,4,3,2,9,8,7,6,5,4,3,2]
+            : [6,5,4,3,2,9,8,7,6,5,4,3,2];
+        $soma = 0;
+        for ($i = 0, $n = strlen($base); $i < $n; $i++) $soma += (int)$base[$i] * $pesos[$i];
+        $resto = $soma % 11;
+        return $resto < 2 ? 0 : 11 - $resto;
+    };
+    $d1 = $dv(substr($cnpj, 0, 12));
+    $d2 = $dv(substr($cnpj, 0, 12) . $d1);
+    return (int)$cnpj[12] === $d1 && (int)$cnpj[13] === $d2;
+}
+
+/**
+ * Confirma a existência do CNPJ na Receita Federal via BrasilAPI (best-effort).
+ * Retorna: 'ok' | 'inexistente' | 'baixado' | 'indisponivel'.
+ * Em 'indisponivel' (API fora/timeout) o chamador deve DEIXAR PASSAR — nunca
+ * bloquear cadastro por indisponibilidade de serviço externo.
+ */
+function cnpj_consulta_receita(string $cnpj): string {
+    $cnpj = preg_replace('/\D/', '', $cnpj);
+    if (strlen($cnpj) !== 14) return 'inexistente';
+    $url = "https://brasilapi.com.br/api/cnpj/v1/{$cnpj}";
+    $ctx = stream_context_create(['http' => [
+        'timeout' => 8, 'ignore_errors' => true, 'user_agent' => 'DOT-ON/1.0',
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    if ($resp === false || $resp === '') return 'indisponivel';
+
+    $code = 0;
+    if (isset($http_response_header[0]) && preg_match('#\s(\d{3})\s#', $http_response_header[0], $m)) {
+        $code = (int)$m[1];
+    }
+    $data = json_decode($resp, true);
+    if ($code === 404) return 'inexistente';
+    if (!is_array($data)) return 'indisponivel';
+    if (($data['type'] ?? '') === 'service_error') return 'indisponivel';
+    if (!empty($data['message']) && empty($data['razao_social'])) {
+        // BrasilAPI devolve {message: "CNPJ ... não encontrado"} para inexistentes
+        return stripos($data['message'], 'não') !== false || stripos($data['message'], 'nao') !== false
+            ? 'inexistente' : 'indisponivel';
+    }
+    $sit = mb_strtoupper((string)($data['descricao_situacao_cadastral'] ?? ''));
+    if ($sit === 'BAIXADA' || $sit === 'BAIXADO') return 'baixado';
+    if (!empty($data['razao_social']) || $sit !== '') return 'ok';
+    return 'indisponivel';
+}
